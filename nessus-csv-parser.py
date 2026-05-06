@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import argparse
 import csv
+import re
 import sys
 from typing import Iterable
 
@@ -91,7 +94,10 @@ def parse_args() -> argparse.Namespace:
         "--values",
         dest="match_values",
         nargs="+",
-        help="One or more space-separated values to match (OR logic).",
+        help=(
+            "One or more space-separated regular expressions to search for "
+            "(OR logic, e.g. 'Apache' contains Apache, '^Apache' starts with Apache)."
+        ),
     )
     parser.add_argument(
         "-c",
@@ -137,6 +143,14 @@ def validate_filter_args(match_field: str | None, match_values: list[str] | None
         print("error: --key requires --values.", file=sys.stderr)
         raise SystemExit(2)
 
+    if match_values is not None:
+        for value in match_values:
+            try:
+                re.compile(value)
+            except re.error as err:
+                print(f"error: invalid regular expression '{value}': {err}", file=sys.stderr)
+                raise SystemExit(2)
+
 
 def iter_matching_rows(
     csv_file: str,
@@ -159,9 +173,11 @@ def iter_matching_rows(
             print(f"error: missing required header(s): {missing}", file=sys.stderr)
             raise SystemExit(2)
 
-        match_values_set = set(match_values or [])
+        match_patterns = [re.compile(value) for value in match_values or []]
         for row in reader:
-            if match_field is None or row.get(match_field) in match_values_set:
+            if match_field is None or any(
+                pattern.search(row.get(match_field, "")) for pattern in match_patterns
+            ):
                 yield row
 
 
